@@ -49,129 +49,112 @@ function fetchMuleKorea() {
   });
 }
 
-// 뮬코리아 HTML 파싱 - 완전히 새로운 접근법
+// 뮬코리아 HTML 파싱 - 테이블 구조 기반 파싱
 function parseMuleKoreaHTML(html) {
   const posts = [];
   
   console.log('뮬코리아 HTML 파싱 시작...');
   
-  // HTML에서 모든 링크 찾기
-  const allLinks = html.match(/<a[^>]*href="[^"]*"[^>]*>.*?<\/a>/g) || [];
-  console.log(`뮬코리아: 총 ${allLinks.length}개 링크 발견`);
+  // 테이블 행 추출
+  const tableRowRegex = /<tr[^>]*>.*?<\/tr>/gs;
+  const rows = html.match(tableRowRegex) || [];
+  console.log(`뮬코리아: 총 ${rows.length}개 테이블 행 발견`);
   
   let index = 0;
   
-  for (const link of allLinks) {
+  for (const row of rows) {
     if (index >= 20) break;
     
-    const linkMatch = link.match(/<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/);
-    if (linkMatch) {
-      const title = linkMatch[2].trim();
-      const postUrl = linkMatch[1].startsWith('http') ? linkMatch[1] : `https://www.mule.co.kr${linkMatch[1]}`;
+    // 각 행의 모든 td 요소 추출
+    const tdMatches = row.match(/<td[^>]*>.*?<\/td>/gs) || [];
+    
+    if (tdMatches.length > 1) {
+      // 제목이 있는 셀 찾기 (보통 2번째 또는 3번째 셀)
+      let titleCell = null;
+      let titleLink = null;
       
-      // 교회 관련 키워드 확인
-      const churchKeywords = ['교회', '찬양', '예배', '세션', '주일', '수요', '금요', '예배', '찬양팀', '성도', '목사', '전도사', '멤버', '구인'];
-      const isChurchRelated = churchKeywords.some(keyword => title.includes(keyword));
+      for (let i = 1; i < tdMatches.length; i++) {
+        const cell = tdMatches[i];
+        const linkMatch = cell.match(/<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/);
+        if (linkMatch) {
+          const title = linkMatch[2].trim();
+          if (title.length > 5 && title.length < 200) {
+            titleCell = cell;
+            titleLink = linkMatch;
+            break;
+          }
+        }
+      }
       
-      // 제목 검증
-      if (isChurchRelated && 
-          title.length >= 10 && 
-          title.length <= 200 && 
-          !/^[가-힣]{2,4}$/.test(title) && 
-          !title.includes('조회') && 
-          !title.includes('추천') &&
-          !title.includes('답변') &&
-          !title.includes('댓글') &&
-          !title.includes('구인/구직') &&
-          !title.includes('멤버구인') &&
-          postUrl.includes('/bbs/')) {
+      if (titleLink) {
+        const title = titleLink[2].trim();
+        const postUrl = titleLink[1].startsWith('http') ? titleLink[1] : `https://www.mule.co.kr${titleLink[1]}`;
         
-        posts.push({
-          id: `mule_${index}`,
-          title: title,
-          site: '뮬코리아 (교회 멤버 구인)',
-          siteId: 'mulkorea',
-          date: new Date().toLocaleString(),
-          preview: title,
-          isNew: true,
-          url: postUrl,
-          author: '뮬코리아',
-          views: '0'
-        });
-        
-        console.log(`뮬코리아 게시글 추가: "${title}"`);
-        index++;
+          // 제목 검증 (교회 관련 키워드 필터링 완화)
+          if (title.length >= 5 && 
+              title.length <= 200 && 
+              !/^[가-힣]{2,4}$/.test(title) && 
+              !title.includes('조회') && 
+              !title.includes('추천') &&
+              !title.includes('답변') &&
+              !title.includes('댓글') &&
+              !title.includes('구인/구직') &&
+              !title.includes('멤버구인') &&
+              postUrl.includes('/bbs/')) {
+          
+          // 작성자, 날짜, 조회수 추출 시도
+          const authorTd = tdMatches[tdMatches.length - 3] || '';
+          const dateTd = tdMatches[tdMatches.length - 2] || '';
+          const viewsTd = tdMatches[tdMatches.length - 1] || '';
+          
+          const author = authorTd.replace(/<[^>]*>/g, '').trim() || '뮬코리아';
+          let date = dateTd.replace(/<[^>]*>/g, '').trim();
+          
+          // 날짜 형식 정리 (YYYY-MM-DD 형식으로 변환)
+          if (date && date !== '') {
+            // 다양한 날짜 형식 처리
+            if (date.includes('-')) {
+              // 이미 올바른 형식
+            } else if (date.includes('/')) {
+              // MM/DD/YYYY 형식을 YYYY-MM-DD로 변환
+              const parts = date.split('/');
+              if (parts.length === 3) {
+                date = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+              }
+            } else if (date.includes('.')) {
+              // YYYY.MM.DD 형식을 YYYY-MM-DD로 변환
+              date = date.replace(/\./g, '-');
+            }
+          } else {
+            date = new Date().toISOString().split('T')[0]; // 오늘 날짜
+          }
+          
+          const views = viewsTd.replace(/<[^>]*>/g, '').trim() || '0';
+          
+          posts.push({
+            id: `mule_${index}`,
+            title: title,
+            site: '뮬코리아 (교회 멤버 구인)',
+            siteId: 'mulkorea',
+            date: date,
+            preview: title,
+            isNew: true,
+            url: postUrl,
+            author: author,
+            views: views
+          });
+          
+          console.log(`뮬코리아 게시글 추가: "${title}" (작성자: ${author}, 날짜: ${date})`);
+          index++;
+        }
       }
     }
   }
   
-  // 데이터가 없으면 샘플 데이터 생성
+  // 실제 데이터가 없으면 빈 배열 반환
   if (posts.length === 0) {
-    const samplePosts = [
-      {
-        id: 'mule_sample_1',
-        title: '서울 강남 교회 드럼 주자 구합니다',
-        site: '뮬코리아 (교회 멤버 구인)',
-        siteId: 'mulkorea',
-        date: new Date().toLocaleString(),
-        preview: '주일 예배 및 수요예배 드럼 연주자를 찾습니다.',
-        isNew: true,
-        url: 'https://www.mule.co.kr/bbs/info/recruit',
-        author: '뮬코리아',
-        views: '0'
-      },
-      {
-        id: 'mule_sample_2',
-        title: '교회 찬양팀 드러머 모집합니다',
-        site: '뮬코리아 (교회 멤버 구인)',
-        siteId: 'mulkorea',
-        date: new Date().toLocaleString(),
-        preview: '주일 예배 찬양팀에서 함께할 드러머를 찾습니다.',
-        isNew: true,
-        url: 'https://www.mule.co.kr/bbs/info/recruit',
-        author: '뮬코리아',
-        views: '0'
-      },
-      {
-        id: 'mule_sample_3',
-        title: '순복음교회 건반 연주자 구합니다',
-        site: '뮬코리아 (교회 멤버 구인)',
-        siteId: 'mulkorea',
-        date: new Date().toLocaleString(),
-        preview: '순복음교회에서 주일 예배 건반 연주자를 모집합니다.',
-        isNew: true,
-        url: 'https://www.mule.co.kr/bbs/info/recruit',
-        author: '뮬코리아',
-        views: '0'
-      },
-      {
-        id: 'mule_sample_4',
-        title: '교회 예배 세션 모집',
-        site: '뮬코리아 (교회 멤버 구인)',
-        siteId: 'mulkorea',
-        date: new Date().toLocaleString(),
-        preview: '교회 예배에서 함께할 세션 멤버를 모집합니다.',
-        isNew: true,
-        url: 'https://www.mule.co.kr/bbs/info/recruit',
-        author: '뮬코리아',
-        views: '0'
-      },
-      {
-        id: 'mule_sample_5',
-        title: '찬양팀 멤버 구인',
-        site: '뮬코리아 (교회 멤버 구인)',
-        siteId: 'mulkorea',
-        date: new Date().toLocaleString(),
-        preview: '교회 찬양팀에서 함께할 멤버를 모집합니다.',
-        isNew: true,
-        url: 'https://www.mule.co.kr/bbs/info/recruit',
-        author: '뮬코리아',
-        views: '0'
-      }
-    ];
-    
-    console.log(`뮬코리아에서 총 ${samplePosts.length}개 게시글 수집 (샘플 데이터)`);
-    return samplePosts;
+    console.log('뮬코리아에서 실제 데이터를 찾을 수 없습니다.');
+    return [];
   }
   
   console.log(`뮬코리아에서 총 ${posts.length}개 게시글 수집`);
@@ -219,52 +202,63 @@ function fetchLessonInfo(keyword) {
 function parseLessonInfoHTML(html, keyword) {
   const posts = [];
   
-  // 더 유연한 파싱
-  const tableRowRegex = /<tr[^>]*>.*?<\/tr>/gs;
-  const rows = html.match(tableRowRegex) || [];
+  console.log(`레슨인포 HTML 파싱 시작... (키워드: ${keyword})`);
+  
+  // 더 유연한 파싱 - 모든 링크 찾기
+  const allLinks = html.match(/<a[^>]*href="[^"]*"[^>]*>.*?<\/a>/g) || [];
+  console.log(`레슨인포: 총 ${allLinks.length}개 링크 발견`);
   
   let index = 0;
   
-  for (const row of rows) {
-    if (index >= 20) break; // 더 많이 가져오기
+  for (const link of allLinks) {
+    if (index >= 20) break;
     
-    const titleMatch = row.match(/<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/);
-    if (titleMatch) {
-      const title = titleMatch[2].trim();
-      const postUrl = titleMatch[1].startsWith('http') ? titleMatch[1] : `https://www.lessoninfo.co.kr${titleMatch[1]}`;
+    const linkMatch = link.match(/<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/);
+    if (linkMatch) {
+      const title = linkMatch[2].trim();
+      // 링크 URL 정리
+      let postUrl = linkMatch[1];
+      if (!postUrl.startsWith('http')) {
+        if (postUrl.startsWith('/')) {
+          postUrl = `https://www.lessoninfo.co.kr${postUrl}`;
+        } else {
+          postUrl = `https://www.lessoninfo.co.kr/${postUrl}`;
+        }
+      }
       
-      if (title && (title.toLowerCase().includes(keyword.toLowerCase()) || title.includes('드럼') || title.includes('드러머'))) {
+      // 드럼/드러머 관련 키워드 확인
+      const drumKeywords = ['드럼', '드러머', 'drum', 'drummer'];
+      const isDrumRelated = drumKeywords.some(drumKeyword => 
+        title.toLowerCase().includes(drumKeyword.toLowerCase())
+      );
+      
+      if (title && title.length > 5 && title.length < 200 && isDrumRelated) {
+        // 날짜는 현재 시간으로 설정 (실제 파싱이 어려운 경우)
+        const date = new Date().toISOString().split('T')[0];
+        
         posts.push({
           id: `lesson_${keyword}_${index}`,
           title: title,
           site: keyword === '드러머' ? '레슨인포 - 드러머' : '레슨인포 - 드럼',
           siteId: keyword === '드러머' ? 'lessoninfo-drummer' : 'lessoninfo-drum',
-          date: new Date().toLocaleString(),
+          date: date,
           preview: title,
           isNew: true,
           url: postUrl,
           author: '레슨인포',
           views: '0'
         });
+        
+        console.log(`레슨인포 게시글 추가: "${title}"`);
         index++;
       }
     }
   }
   
-  // 데이터가 없으면 샘플 데이터 생성
+  // 실제 데이터가 없으면 빈 배열 반환
   if (posts.length === 0) {
-    posts.push({
-      id: `lesson_${keyword}_sample_1`,
-      title: `${keyword} 관련 게시글`,
-      site: keyword === '드러머' ? '레슨인포 - 드러머' : '레슨인포 - 드럼',
-      siteId: keyword === '드러머' ? 'lessoninfo-drummer' : 'lessoninfo-drum',
-      date: new Date().toLocaleString(),
-      preview: `${keyword} 관련 내용입니다.`,
-      isNew: true,
-      url: 'https://www.lessoninfo.co.kr',
-      author: '레슨인포',
-      views: '0'
-    });
+    console.log(`레슨인포에서 ${keyword} 관련 실제 데이터를 찾을 수 없습니다.`);
+    return [];
   }
   
   return posts;
@@ -335,8 +329,8 @@ function parseJangshinHTML(html, keyword) {
         const title = titleMatch[2].trim();
         const postUrl = titleMatch[1].startsWith('http') ? titleMatch[1] : `https://www.puts.ac.kr${titleMatch[1]}`;
         
-        // 드럼 관련 글만 필터링
-        if (title && title.length > 5 && (title.includes('드럼') || title.includes('드러머'))) {
+        // 제목 검증 (드럼 관련 필터링 완화)
+        if (title && title.length > 5 && title.length < 200) {
           // 작성자, 날짜, 조회수 추출
           const authorTd = tdMatches[2] || '';
           const dateTd = tdMatches[3] || '';
@@ -365,73 +359,10 @@ function parseJangshinHTML(html, keyword) {
     }
   }
   
-  // 실제 데이터가 없을 경우 모의 데이터 추가
+  // 실제 데이터가 없으면 빈 배열 반환
   if (posts.length === 0) {
-    const mockPosts = [
-      {
-        id: 'jangshin_1',
-        title: '장신대 교회 드러머 모집',
-        site: '장신대 - 드럼',
-        siteId: 'jangshin',
-        date: new Date().toLocaleString(),
-        preview: '장신대 교회에서 찬양팀 드러머를 모집합니다.',
-        isNew: true,
-        url: 'https://www.puts.ac.kr/board/1',
-        author: '장신대',
-        views: '7'
-      },
-      {
-        id: 'jangshin_2',
-        title: '드럼 세션 모집 - 장신대',
-        site: '장신대 - 드럼',
-        siteId: 'jangshin',
-        date: new Date().toLocaleString(),
-        preview: '장신대에서 드럼 세션을 함께할 분을 찾습니다.',
-        isNew: true,
-        url: 'https://www.puts.ac.kr/board/2',
-        author: '장신대',
-        views: '11'
-      },
-      {
-        id: 'jangshin_3',
-        title: '찬양팀 드러머 구합니다',
-        site: '장신대 - 드럼',
-        siteId: 'jangshin',
-        date: new Date().toLocaleString(),
-        preview: '장신대 교회 찬양팀에서 드럼 연주자를 모집합니다.',
-        isNew: true,
-        url: 'https://www.puts.ac.kr/board/3',
-        author: '장신대',
-        views: '9'
-      },
-      {
-        id: 'jangshin_4',
-        title: '드럼 주자 모집',
-        site: '장신대 - 드럼',
-        siteId: 'jangshin',
-        date: new Date().toLocaleString(),
-        preview: '장신대에서 예배 드럼 주자를 모집합니다.',
-        isNew: true,
-        url: 'https://www.puts.ac.kr/board/4',
-        author: '장신대',
-        views: '6'
-      },
-      {
-        id: 'jangshin_5',
-        title: '교회 드러머 청빙',
-        site: '장신대 - 드럼',
-        siteId: 'jangshin',
-        date: new Date().toLocaleString(),
-        preview: '장신대 교회에서 드러머를 모집합니다.',
-        isNew: true,
-        url: 'https://www.puts.ac.kr/board/5',
-        author: '장신대',
-        views: '14'
-      }
-    ];
-    
-    console.log(`장신대에서 총 ${mockPosts.length}개 게시글 수집 (모의 데이터)`);
-    return mockPosts;
+    console.log('장신대에서 실제 데이터를 찾을 수 없습니다.');
+    return [];
   }
   
   console.log(`장신대에서 총 ${posts.length}개 게시글 수집`);
@@ -503,8 +434,8 @@ function parseGodPeopleHTML(html) {
         const title = titleMatch[2].trim();
         const postUrl = titleMatch[1].startsWith('http') ? titleMatch[1] : `https://recruit.godpeople.com${titleMatch[1]}`;
         
-        // 드럼 관련 글만 필터링
-        if (title && title.length > 5 && (title.includes('드럼') || title.includes('드러머'))) {
+        // 제목 검증 (드럼 관련 필터링 완화)
+        if (title && title.length > 5 && title.length < 200) {
           // 작성자, 날짜, 조회수 추출
           const authorTd = tdMatches[2] || '';
           const dateTd = tdMatches[3] || '';
@@ -533,73 +464,10 @@ function parseGodPeopleHTML(html) {
     }
   }
   
-  // 실제 데이터가 없을 경우 모의 데이터 추가
+  // 실제 데이터가 없으면 빈 배열 반환
   if (posts.length === 0) {
-    const mockPosts = [
-      {
-        id: 'godpeople_1',
-        title: '교회 찬양팀 드러머 모집합니다',
-        site: '갓피플 구인구직',
-        siteId: 'godpeople',
-        date: new Date().toLocaleString(),
-        preview: '주일 예배 찬양팀에서 함께할 드러머를 찾습니다.',
-        isNew: true,
-        url: 'https://recruit.godpeople.com/recruit/1',
-        author: '갓피플',
-        views: '15'
-      },
-      {
-        id: 'godpeople_2',
-        title: '서울 강남 교회 드럼 세션 모집',
-        site: '갓피플 구인구직',
-        siteId: 'godpeople',
-        date: new Date().toLocaleString(),
-        preview: '강남 지역 교회에서 드럼 세션을 함께할 분을 찾습니다.',
-        isNew: true,
-        url: 'https://recruit.godpeople.com/recruit/2',
-        author: '갓피플',
-        views: '23'
-      },
-      {
-        id: 'godpeople_3',
-        title: '찬양팀 드러머 구합니다',
-        site: '갓피플 구인구직',
-        siteId: 'godpeople',
-        date: new Date().toLocaleString(),
-        preview: '교회 찬양팀에서 드럼 연주를 담당할 분을 모집합니다.',
-        isNew: true,
-        url: 'https://recruit.godpeople.com/recruit/3',
-        author: '갓피플',
-        views: '8'
-      },
-      {
-        id: 'godpeople_4',
-        title: '드럼 주자 모집 - 경기도',
-        site: '갓피플 구인구직',
-        siteId: 'godpeople',
-        date: new Date().toLocaleString(),
-        preview: '경기도 소재 교회에서 드럼 주자를 모집합니다.',
-        isNew: true,
-        url: 'https://recruit.godpeople.com/recruit/4',
-        author: '갓피플',
-        views: '12'
-      },
-      {
-        id: 'godpeople_5',
-        title: '교회 드러머 청빙',
-        site: '갓피플 구인구직',
-        siteId: 'godpeople',
-        date: new Date().toLocaleString(),
-        preview: '교회 예배에서 드럼 연주를 담당할 분을 찾습니다.',
-        isNew: true,
-        url: 'https://recruit.godpeople.com/recruit/5',
-        author: '갓피플',
-        views: '19'
-      }
-    ];
-    
-    console.log(`갓피플에서 총 ${mockPosts.length}개 게시글 수집 (모의 데이터)`);
-    return mockPosts;
+    console.log('갓피플에서 실제 데이터를 찾을 수 없습니다.');
+    return [];
   }
   
   console.log(`갓피플에서 총 ${posts.length}개 게시글 수집`);

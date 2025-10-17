@@ -3,7 +3,6 @@ import { Header } from './components/Header';
 import { MonitoringSidebar } from './components/MonitoringSidebar';
 import { FilterBar } from './components/FilterBar';
 import { PostCard } from './components/PostCard';
-import { PostDetailModal } from './components/PostDetailModal';
 import { EmptyState } from './components/EmptyState';
 import { ScrollArea } from './components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './components/ui/sheet';
@@ -148,8 +147,6 @@ export default function App() {
   const [selectedSite, setSelectedSite] = useState('all');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [posts, setPosts] = useState(mockPosts);
-  const [selectedPost, setSelectedPost] = useState(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [currentPage, setCurrentPage] = useState(1);
@@ -234,17 +231,6 @@ export default function App() {
     fetchRealData(1, site);
   };
 
-  // 게시글 상세보기 핸들러
-  const handleViewDetail = (post: any) => {
-    setSelectedPost(post);
-    setIsDetailModalOpen(true);
-  };
-
-  // 모달 닫기 핸들러
-  const handleCloseDetail = () => {
-    setIsDetailModalOpen(false);
-    setSelectedPost(null);
-  };
 
   // Filter posts based on search
   const filteredPosts = posts.filter((post) => {
@@ -299,8 +285,7 @@ export default function App() {
                     {filteredPosts.map((post) => (
                       <PostCard 
                         key={post.id} 
-                        {...post} 
-                        onViewDetail={handleViewDetail}
+                        {...post}
                       />
                     ))}
                   </div>
@@ -319,12 +304,6 @@ export default function App() {
           </ScrollArea>
         </main>
         
-        {/* 게시글 상세 모달 */}
-        <PostDetailModal
-          isOpen={isDetailModalOpen}
-          onClose={handleCloseDetail}
-          post={selectedPost}
-        />
       </div>
     </div>
   );
